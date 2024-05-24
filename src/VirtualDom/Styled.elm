@@ -40,7 +40,6 @@ module VirtualDom.Styled exposing
 import Css.Preprocess as Preprocess exposing (Style)
 import Css.Preprocess.Resolve as Resolve
 import Css.Structure as Structure
-import Dict exposing (Dict)
 import Hash
 import Hex
 import Json.Encode
@@ -508,7 +507,7 @@ unstyleNS :
 unstyleNS maybeNonce ns elemType properties children =
     let
         initialStyles =
-            List.foldl accumulateStyles Dict.empty properties
+            List.foldl accumulateStyles [] properties
 
         ( childNodes, styles ) =
             List.foldl accumulateStyledHtml
@@ -538,11 +537,11 @@ unstyleScopedNS :
 unstyleScopedNS maybeNonce scope ns elemType properties children =
     let
         rootStyles =
-            List.foldl accumulateStyles Dict.empty properties
+            List.foldl accumulateStyles [] properties
 
         ( childNodes, descendantStyles ) =
             List.foldl accumulateStyledHtml
-                ( [], Dict.empty )
+                ( [], [] )
                 children
 
         styleNode =
@@ -567,7 +566,7 @@ unstyle :
 unstyle maybeNonce elemType properties children =
     let
         initialStyles =
-            List.foldl accumulateStyles Dict.empty properties
+            List.foldl accumulateStyles [] properties
 
         ( childNodes, styles ) =
             List.foldl accumulateStyledHtml
@@ -596,11 +595,11 @@ unstyleScoped :
 unstyleScoped maybeNonce scope elemType properties children =
     let
         rootStyles =
-            List.foldl accumulateStyles Dict.empty properties
+            List.foldl accumulateStyles [] properties
 
         ( childNodes, descendantStyles ) =
             List.foldl accumulateStyledHtml
-                ( [], Dict.empty )
+                ( [], [] )
                 children
 
         styleNode =
@@ -626,7 +625,7 @@ unstyleKeyedNS :
 unstyleKeyedNS maybeNonce ns elemType properties keyedChildren =
     let
         initialStyles =
-            List.foldl accumulateStyles Dict.empty properties
+            List.foldl accumulateStyles [] properties
 
         ( keyedChildNodes, styles ) =
             List.foldl accumulateKeyedStyledHtml
@@ -657,11 +656,11 @@ unstyleScopedKeyedNS :
 unstyleScopedKeyedNS maybeNonce scope ns elemType properties keyedChildren =
     let
         rootStyles =
-            List.foldl accumulateStyles Dict.empty properties
+            List.foldl accumulateStyles [] properties
 
         ( keyedChildNodes, descendantStyles ) =
             List.foldl accumulateKeyedStyledHtml
-                ( [], Dict.empty )
+                ( [], [] )
                 keyedChildren
 
         keyedStyleNode =
@@ -687,7 +686,7 @@ unstyleKeyed :
 unstyleKeyed maybeNonce elemType properties keyedChildren =
     let
         initialStyles =
-            List.foldl accumulateStyles Dict.empty properties
+            List.foldl accumulateStyles [] properties
 
         ( keyedChildNodes, styles ) =
             List.foldl accumulateKeyedStyledHtml
@@ -716,11 +715,11 @@ unstyleScopedKeyed :
 unstyleScopedKeyed maybeNonce scope elemType properties keyedChildren =
     let
         rootStyles =
-            List.foldl accumulateStyles Dict.empty properties
+            List.foldl accumulateStyles [] properties
 
         ( keyedChildNodes, descendantStyles ) =
             List.foldl accumulateKeyedStyledHtml
-                ( [], Dict.empty )
+                ( [], [] )
                 keyedChildren
 
         keyedStyleNode =
@@ -740,26 +739,39 @@ unstyleScopedKeyed maybeNonce scope elemType properties keyedChildren =
 -- INTERNAL --
 
 
+getClassname : CssTemplate -> List ( CssTemplate, Classname ) -> Maybe Classname
+getClassname cssTemplate styles =
+    case styles of
+        [] ->
+            Nothing
+
+        ( template, name ) :: rest ->
+            if template == cssTemplate then
+                Just name
+
+            else
+                getClassname cssTemplate rest
+
+
 accumulateStyles :
     Attribute msg
-    -> Dict CssTemplate Classname
-    -> Dict CssTemplate Classname
+    -> List ( CssTemplate, Classname )
+    -> List ( CssTemplate, Classname )
 accumulateStyles (Attribute _ isCssStyles cssTemplate) styles =
     if isCssStyles then
-        case Dict.get cssTemplate styles of
+        case getClassname cssTemplate styles of
             Just _ ->
                 styles
 
             Nothing ->
-                Dict.insert cssTemplate (Hash.fromString cssTemplate) styles
-
+                styles ++ [ ( cssTemplate, (Hash.fromString cssTemplate) ) ]
     else
         styles
 
 
 type AccumulatedStyles
-    = UnscopedStyles (Dict CssTemplate Classname)
-    | ScopedStyles Scope (Dict CssTemplate Classname) (Dict CssTemplate Classname)
+    = UnscopedStyles (List ( CssTemplate, Classname ))
+    | ScopedStyles Scope (List ( CssTemplate, Classname )) (List ( CssTemplate, Classname ))
 
 
 toKeyedStyleNode : Maybe Nonce -> AccumulatedStyles -> List ( String, a ) -> ( String, VirtualDom.Node msg )
@@ -809,10 +821,10 @@ toStyleNode maybeNonce accumulatedStyles =
 -- INTERNAL --
 
 
-extractUnstyledAttribute : Dict CssTemplate Classname -> Attribute msg -> VirtualDom.Attribute msg
+extractUnstyledAttribute : List ( CssTemplate, Classname ) -> Attribute msg -> VirtualDom.Attribute msg
 extractUnstyledAttribute styles (Attribute val isCssStyles cssTemplate) =
     if isCssStyles then
-        case Dict.get cssTemplate styles of
+        case getClassname cssTemplate styles of
             Just classname ->
                 VirtualDom.property "className" (Json.Encode.string classname)
 
@@ -823,10 +835,10 @@ extractUnstyledAttribute styles (Attribute val isCssStyles cssTemplate) =
         val
 
 
-extractUnstyledAttributeNS : Dict CssTemplate Classname -> Attribute msg -> VirtualDom.Attribute msg
+extractUnstyledAttributeNS : List ( CssTemplate, Classname ) -> Attribute msg -> VirtualDom.Attribute msg
 extractUnstyledAttributeNS styles (Attribute val isCssStyles cssTemplate) =
     if isCssStyles then
-        case Dict.get cssTemplate styles of
+        case getClassname cssTemplate styles of
             Just classname ->
                 VirtualDom.attribute "class" classname
 
@@ -839,8 +851,8 @@ extractUnstyledAttributeNS styles (Attribute val isCssStyles cssTemplate) =
 
 accumulateStyledHtml :
     Node msg
-    -> ( List (VirtualDom.Node msg), Dict CssTemplate Classname )
-    -> ( List (VirtualDom.Node msg), Dict CssTemplate Classname )
+    -> ( List (VirtualDom.Node msg), List ( CssTemplate, Classname ) )
+    -> ( List (VirtualDom.Node msg), List ( CssTemplate, Classname ) )
 accumulateStyledHtml html ( nodes, styles ) =
     case html of
         Unstyled vdomNode ->
@@ -916,8 +928,8 @@ style key val =
 
 accumulateKeyedStyledHtml :
     ( String, Node msg )
-    -> ( List ( String, VirtualDom.Node msg ), Dict CssTemplate Classname )
-    -> ( List ( String, VirtualDom.Node msg ), Dict CssTemplate Classname )
+    -> ( List ( String, VirtualDom.Node msg ), List ( CssTemplate, Classname ) )
+    -> ( List ( String, VirtualDom.Node msg ), List ( CssTemplate, Classname ) )
 accumulateKeyedStyledHtml ( key, html ) ( pairs, styles ) =
     case html of
         Unstyled vdom ->
@@ -986,22 +998,22 @@ accumulateKeyedStyledHtml ( key, html ) ( pairs, styles ) =
             ( ( key, vdom ) :: pairs, finalStyles )
 
 
-toDeclaration : Dict CssTemplate Classname -> String
+toDeclaration : List ( CssTemplate, Classname ) -> String
 toDeclaration dict =
-    Dict.foldl styleToDeclaration "" dict
+    List.foldl styleToDeclaration "" dict
 
 
-styleToDeclaration : CssTemplate -> Classname -> String -> String
-styleToDeclaration template classname declaration =
+styleToDeclaration : ( CssTemplate, Classname ) -> String -> String
+styleToDeclaration ( template, classname ) declaration =
     declaration
         ++ "\n"
         ++ String.replace classnameStandin classname template
 
 
-toScopedDeclaration : String -> Dict CssTemplate Classname -> String
+toScopedDeclaration : String -> List ( CssTemplate, Classname ) -> String
 toScopedDeclaration scopingPrefix dict =
-    Dict.foldl
-        (\template classname declaration ->
+    List.foldl
+        (\( template, classname ) declaration ->
             declaration
                 ++ "\n"
                 ++ String.replace ("." ++ classnameStandin) ("#" ++ scopingPrefix ++ "." ++ classname) template
